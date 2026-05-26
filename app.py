@@ -5,45 +5,45 @@ import matplotlib.pyplot as plt
 import joblib
 import os
 
-from sklearn.datasets import fetch_california_housing
+from sklearn.datasets import load_breast_cancer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import KNeighborsRegressor
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import (
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score
+    accuracy_score,
+    confusion_matrix,
+    classification_report
 )
 
 # ================= Page Config =================
 
 st.set_page_config(
-    page_title="KNN Regression Dashboard",
-    page_icon="📊",
+    page_title="KNN Classification Dashboard",
+    page_icon="🧠",
     layout="wide"
 )
 
-st.title("📊 California Housing Price Prediction")
+st.title("🧠 Breast Cancer Prediction using KNN Classification")
 
-# ================= Create Folders Automatically =================
+# ================= Create Folders =================
 
 os.makedirs("data", exist_ok=True)
 os.makedirs("models", exist_ok=True)
 
 # ================= Load/Create Dataset =================
 
-csv_path = "data/california_housing.csv"
+csv_path = "data/breast_cancer.csv"
 
 if not os.path.exists(csv_path):
 
-    housing = fetch_california_housing()
+    cancer = load_breast_cancer()
 
     df = pd.DataFrame(
-        housing.data,
-        columns=housing.feature_names
+        cancer.data,
+        columns=cancer.feature_names
     )
 
-    df["PRICE"] = housing.target
+    df["target"] = cancer.target
 
     df.to_csv(csv_path, index=False)
 
@@ -51,10 +51,24 @@ else:
 
     df = pd.read_csv(csv_path)
 
+# ================= Dataset Info =================
+
+st.header("📂 Dataset Preview")
+
+st.dataframe(df.head())
+
+st.header("📋 Dataset Shape")
+
+st.write(df.shape)
+
+st.header("📊 Class Distribution")
+
+st.bar_chart(df["target"].value_counts())
+
 # ================= Features & Target =================
 
-X = df.drop("PRICE", axis=1)
-y = df["PRICE"]
+X = df.drop("target", axis=1)
+y = df["target"]
 
 # ================= Train-Test Split =================
 
@@ -62,7 +76,8 @@ X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    random_state=42
+    random_state=42,
+    stratify=y
 )
 
 # ================= Scaling =================
@@ -95,7 +110,7 @@ metric = st.sidebar.selectbox(
 
 # ================= Train Model =================
 
-model = KNeighborsRegressor(
+model = KNeighborsClassifier(
     n_neighbors=k,
     weights=weights,
     metric=metric
@@ -105,7 +120,7 @@ model.fit(X_train_scaled, y_train)
 
 # ================= Save Model =================
 
-joblib.dump(model, "models/knn_model.pkl")
+joblib.dump(model, "models/knn_classifier.pkl")
 joblib.dump(scaler, "models/scaler.pkl")
 
 # ================= Predictions =================
@@ -114,111 +129,112 @@ y_pred = model.predict(X_test_scaled)
 
 # ================= Metrics =================
 
-mse = mean_squared_error(y_test, y_pred)
-rmse = np.sqrt(mse)
-mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
-
-# ================= Display Metrics =================
+accuracy = accuracy_score(y_test, y_pred)
 
 st.header("📊 Model Performance")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2 = st.columns(2)
 
 with col1:
-    st.metric("MSE", f"{mse:.4f}")
+    st.metric("Accuracy", f"{accuracy:.4f}")
 
 with col2:
-    st.metric("RMSE", f"{rmse:.4f}")
+    st.metric(
+        "Correct Predictions",
+        f"{(y_test == y_pred).sum()}"
+    )
 
-with col3:
-    st.metric("MAE", f"{mae:.4f}")
+# ================= Confusion Matrix =================
 
-with col4:
-    st.metric("R² Score", f"{r2:.4f}")
+st.header("📈 Confusion Matrix")
 
-# ================= Dataset Preview =================
+cm = confusion_matrix(y_test, y_pred)
 
-st.header("📂 Dataset Preview")
+fig, ax = plt.subplots(figsize=(6, 5))
 
-st.dataframe(df.head())
+heatmap = ax.imshow(cm, cmap="Blues")
 
-# ================= Statistical Summary =================
+for i in range(cm.shape[0]):
+    for j in range(cm.shape[1]):
+        ax.text(
+            j,
+            i,
+            cm[i, j],
+            ha="center",
+            va="center",
+            color="black"
+        )
 
-st.header("📋 Dataset Statistics")
-
-st.dataframe(df.describe())
-
-# ================= Correlation Heatmap =================
-
-st.header("📈 Correlation Heatmap")
-
-fig, ax = plt.subplots(figsize=(10, 6))
-
-corr = df.corr()
-
-heatmap = ax.imshow(corr, cmap="coolwarm")
-
-ax.set_xticks(range(len(corr.columns)))
-ax.set_yticks(range(len(corr.columns)))
-
-ax.set_xticklabels(corr.columns, rotation=90)
-ax.set_yticklabels(corr.columns)
+ax.set_xlabel("Predicted")
+ax.set_ylabel("Actual")
+ax.set_title("Confusion Matrix")
 
 plt.colorbar(heatmap)
 
 st.pyplot(fig)
 
-# ================= Actual vs Predicted =================
+# ================= Classification Report =================
 
-st.header("📉 Actual vs Predicted")
+st.header("📋 Classification Report")
 
-fig2, ax2 = plt.subplots(figsize=(8, 6))
-
-ax2.scatter(y_test, y_pred)
-
-ax2.plot(
-    [y_test.min(), y_test.max()],
-    [y_test.min(), y_test.max()],
-    "r--"
+report = classification_report(
+    y_test,
+    y_pred,
+    output_dict=True
 )
 
-ax2.set_xlabel("Actual Values")
-ax2.set_ylabel("Predicted Values")
-ax2.set_title("Actual vs Predicted")
+report_df = pd.DataFrame(report).transpose()
+
+st.dataframe(report_df)
+
+# ================= Correlation Heatmap =================
+
+st.header("📊 Correlation Heatmap")
+
+fig2, ax2 = plt.subplots(figsize=(12, 8))
+
+corr = df.corr()
+
+heatmap2 = ax2.imshow(corr, cmap="coolwarm")
+
+ax2.set_xticks(range(len(corr.columns)))
+ax2.set_yticks(range(len(corr.columns)))
+
+ax2.set_xticklabels(
+    corr.columns,
+    rotation=90,
+    fontsize=7
+)
+
+ax2.set_yticklabels(
+    corr.columns,
+    fontsize=7
+)
+
+plt.colorbar(heatmap2)
 
 st.pyplot(fig2)
 
-# ================= Error Distribution =================
-
-st.header("📊 Error Distribution")
-
-errors = y_test - y_pred
-
-fig3, ax3 = plt.subplots(figsize=(8, 5))
-
-ax3.hist(errors, bins=30)
-
-ax3.set_xlabel("Prediction Error")
-ax3.set_ylabel("Frequency")
-ax3.set_title("Distribution of Errors")
-
-st.pyplot(fig3)
-
 # ================= Custom Prediction =================
 
-st.header("🏠 Predict House Price")
+st.header("🔍 Predict Cancer Type")
 
 input_data = {}
 
-for column in X.columns:
+for column in X.columns[:10]:
 
     input_data[column] = st.number_input(
         f"Enter {column}",
         value=float(X[column].mean())
     )
 
-if st.button("Predict"):
+remaining_features = X.columns[10:]
+
+for column in remaining_features:
+
+    input_data[column] = float(X[column].mean())
+
+if st.button("Predict Cancer"):
 
     input_df = pd.DataFrame([input_data])
 
@@ -226,10 +242,11 @@ if st.button("Predict"):
 
     prediction = model.predict(input_scaled)
 
-    st.success(
-        f"Predicted House Price: {prediction[0]:.4f}"
-    )
+    if prediction[0] == 1:
+        st.success("Prediction: Benign Tumor")
+    else:
+        st.error("Prediction: Malignant Tumor")
 
 # ================= Footer =================
 
-st.success("🎉 KNN Regression Dashboard Completed Successfully")
+st.success("🎉 KNN Classification Dashboard Completed Successfully")
