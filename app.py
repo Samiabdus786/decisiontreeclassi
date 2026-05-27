@@ -12,34 +12,32 @@ from sklearn.model_selection import (
     GridSearchCV
 )
 
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeRegressor
 
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score
 )
 
 # ---------------------------------------------------
 # Page Config
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Heart Disease Classifier",
-    page_icon="❤️",
+    page_title="Medical Insurance Cost Predictor",
+    page_icon="💰",
     layout="wide"
 )
 
-st.title("❤️ Heart Disease Prediction Dashboard")
-st.markdown("Interactive Decision Tree Classification System")
+st.title("💰 Medical Insurance Cost Prediction")
+st.markdown("Interactive Decision Tree Regression Dashboard")
 
 # ---------------------------------------------------
 # Load Dataset
 # ---------------------------------------------------
 @st.cache_data
 def load_data():
-    return pd.read_csv("data/heart.csv")
+    return pd.read_csv("data/insurance.csv")
 
 data = load_data()
 
@@ -56,13 +54,13 @@ for col in categorical_cols:
 # ---------------------------------------------------
 os.makedirs("models", exist_ok=True)
 
-MODEL_PATH = "models/decision_tree_model.pkl"
+MODEL_PATH = "models/decision_tree_regressor.pkl"
 
 # ---------------------------------------------------
 # Features & Target
 # ---------------------------------------------------
-X = data.drop("HeartDisease", axis=1)
-y = data["HeartDisease"]
+X = data.drop("charges", axis=1)
+y = data["charges"]
 
 # ---------------------------------------------------
 # Train Model if PKL Doesn't Exist
@@ -77,17 +75,20 @@ if not os.path.exists(MODEL_PATH):
     )
 
     params = {
-        "max_depth": [3, 5, 7, 10],
+        "max_depth": [3, 5, 7, 10, 15],
         "min_samples_split": [2, 5, 10],
         "min_samples_leaf": [1, 2, 4],
-        "criterion": ["gini", "entropy"]
+        "criterion": [
+            "squared_error",
+            "friedman_mse"
+        ]
     }
 
     grid = GridSearchCV(
-        DecisionTreeClassifier(random_state=42),
+        DecisionTreeRegressor(random_state=42),
         params,
         cv=5,
-        scoring="accuracy"
+        scoring="r2"
     )
 
     grid.fit(X_train, y_train)
@@ -124,7 +125,7 @@ show_heatmap = st.sidebar.checkbox(
 )
 
 show_distribution = st.sidebar.checkbox(
-    "Show Target Distribution",
+    "Show Insurance Charges Distribution",
     value=True
 )
 
@@ -135,7 +136,7 @@ if show_heatmap:
 
     st.subheader("📊 Correlation Heatmap")
 
-    fig, ax = plt.subplots(figsize=(12,8))
+    fig, ax = plt.subplots(figsize=(10,7))
 
     sns.heatmap(
         data.corr(),
@@ -147,17 +148,17 @@ if show_heatmap:
     st.pyplot(fig)
 
 # ---------------------------------------------------
-# Target Distribution
+# Distribution Plot
 # ---------------------------------------------------
 if show_distribution:
 
-    st.subheader("📈 Heart Disease Distribution")
+    st.subheader("📈 Insurance Charges Distribution")
 
     fig = px.histogram(
         data,
-        x="HeartDisease",
-        color="HeartDisease",
-        title="Target Distribution"
+        x="charges",
+        nbins=30,
+        title="Insurance Charges Distribution"
     )
 
     st.plotly_chart(
@@ -170,10 +171,10 @@ if show_distribution:
 # ---------------------------------------------------
 predictions = model.predict(X)
 
-acc = accuracy_score(y, predictions)
-prec = precision_score(y, predictions)
-rec = recall_score(y, predictions)
-f1 = f1_score(y, predictions)
+mae = mean_absolute_error(y, predictions)
+mse = mean_squared_error(y, predictions)
+rmse = np.sqrt(mse)
+r2 = r2_score(y, predictions)
 
 # ---------------------------------------------------
 # Metrics
@@ -182,32 +183,32 @@ st.subheader("📌 Model Performance")
 
 m1, m2, m3, m4 = st.columns(4)
 
-m1.metric("Accuracy", f"{acc:.4f}")
-m2.metric("Precision", f"{prec:.4f}")
-m3.metric("Recall", f"{rec:.4f}")
-m4.metric("F1 Score", f"{f1:.4f}")
+m1.metric("MAE", f"{mae:.2f}")
+m2.metric("MSE", f"{mse:.2f}")
+m3.metric("RMSE", f"{rmse:.2f}")
+m4.metric("R² Score", f"{r2:.4f}")
 
 # ---------------------------------------------------
-# Confusion Matrix
+# Actual vs Predicted
 # ---------------------------------------------------
-st.subheader("📉 Confusion Matrix")
+st.subheader("📉 Actual vs Predicted Charges")
 
-cm = confusion_matrix(y, predictions)
+comparison = pd.DataFrame({
+    "Actual": y,
+    "Predicted": predictions
+})
 
-fig, ax = plt.subplots(figsize=(5,5))
-
-sns.heatmap(
-    cm,
-    annot=True,
-    fmt="d",
-    cmap="Blues",
-    ax=ax
+fig = px.scatter(
+    comparison,
+    x="Actual",
+    y="Predicted",
+    title="Actual vs Predicted Charges"
 )
 
-ax.set_xlabel("Predicted")
-ax.set_ylabel("Actual")
-
-st.pyplot(fig)
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
 
 # ---------------------------------------------------
 # Feature Importance
@@ -243,54 +244,42 @@ st.plotly_chart(
 st.subheader("🧠 Model Information")
 
 st.success("""
-Algorithm Used: Decision Tree Classifier
+Algorithm Used: Decision Tree Regressor
 
 Hyperparameter Tuning:
 - GridSearchCV
 - Cross Validation = 5
-- Criterion = Gini / Entropy
 - Optimized Tree Depth
+- Optimized Split Criteria
 """)
 
 # ---------------------------------------------------
 # User Input Section
 # ---------------------------------------------------
-st.subheader("🩺 Patient Details Prediction")
+st.subheader("🩺 Insurance Cost Prediction")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    Age = st.slider("Age", 20, 80, 45)
-    Sex = st.selectbox("Sex", [0, 1])
-    ChestPainType = st.slider("Chest Pain Type", 0, 3, 1)
-    RestingBP = st.slider("Resting BP", 80, 200, 120)
+    age = st.slider("Age", 18, 70, 30)
+    sex = st.selectbox("Sex", [0,1])
+    bmi = st.slider("BMI", 10.0, 50.0, 25.0)
 
 with col2:
-    Cholesterol = st.slider("Cholesterol", 0, 600, 200)
-    FastingBS = st.selectbox("Fasting Blood Sugar", [0,1])
-    RestingECG = st.slider("Resting ECG", 0, 2, 1)
-    MaxHR = st.slider("Max Heart Rate", 60, 220, 150)
-
-with col3:
-    ExerciseAngina = st.selectbox("Exercise Angina", [0,1])
-    Oldpeak = st.slider("Old Peak", 0.0, 6.0, 1.0)
-    ST_Slope = st.slider("ST Slope", 0, 2, 1)
+    children = st.slider("Children", 0, 5, 1)
+    smoker = st.selectbox("Smoker", [0,1])
+    region = st.selectbox("Region", [0,1,2,3])
 
 # ---------------------------------------------------
 # Input Data
 # ---------------------------------------------------
 input_data = pd.DataFrame([{
-    "Age": Age,
-    "Sex": Sex,
-    "ChestPainType": ChestPainType,
-    "RestingBP": RestingBP,
-    "Cholesterol": Cholesterol,
-    "FastingBS": FastingBS,
-    "RestingECG": RestingECG,
-    "MaxHR": MaxHR,
-    "ExerciseAngina": ExerciseAngina,
-    "Oldpeak": Oldpeak,
-    "ST_Slope": ST_Slope
+    "age": age,
+    "sex": sex,
+    "bmi": bmi,
+    "children": children,
+    "smoker": smoker,
+    "region": region
 }])
 
 # ---------------------------------------------------
@@ -301,27 +290,15 @@ input_data = input_data.reindex(columns=X.columns, fill_value=0)
 # ---------------------------------------------------
 # Prediction
 # ---------------------------------------------------
-if st.button("Predict Heart Disease"):
+if st.button("Predict Insurance Cost"):
 
     prediction = model.predict(input_data)[0]
 
-    probability = model.predict_proba(
-        input_data
-    )[0]
+    st.subheader("💰 Estimated Insurance Charges")
 
-    confidence = np.max(probability) * 100
-
-    st.subheader("🔍 Prediction Result")
-
-    if prediction == 1:
-        st.error(
-            f"⚠️ High Risk of Heart Disease\n\nConfidence: {confidence:.2f}%"
-        )
-
-    else:
-        st.success(
-            f"✅ Low Risk of Heart Disease\n\nConfidence: {confidence:.2f}%"
-        )
+    st.success(
+        f"Predicted Insurance Cost: ₹ {prediction:,.2f}"
+    )
 
 # ---------------------------------------------------
 # Footer
