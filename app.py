@@ -12,25 +12,28 @@ from sklearn.model_selection import (
     GridSearchCV
 )
 
-from sklearn.tree import DecisionTreeRegressor
+from sklearn.tree import DecisionTreeClassifier
 
 from sklearn.metrics import (
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+    classification_report
 )
 
 # ---------------------------------------------------
 # Page Config
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Medical Insurance Cost Predictor",
-    page_icon="💰",
+    page_title="Medical Insurance Classification",
+    page_icon="🩺",
     layout="wide"
 )
 
-st.title("💰 Medical Insurance Cost Prediction")
-st.markdown("Interactive Decision Tree Regression Dashboard")
+st.title("🩺 Medical Insurance Classification")
+st.markdown("Interactive Decision Tree Classification Dashboard")
 
 # ---------------------------------------------------
 # Load Dataset
@@ -40,6 +43,17 @@ def load_data():
     return pd.read_csv("data/insurance.csv")
 
 data = load_data()
+
+# ---------------------------------------------------
+# Create Classification Target
+# ---------------------------------------------------
+median_charge = data["charges"].median()
+
+data["insurance_category"] = np.where(
+    data["charges"] >= median_charge,
+    1,
+    0
+)
 
 # ---------------------------------------------------
 # Encode Categorical Columns
@@ -54,13 +68,14 @@ for col in categorical_cols:
 # ---------------------------------------------------
 os.makedirs("models", exist_ok=True)
 
-MODEL_PATH = "models/decision_tree_regressor.pkl"
+MODEL_PATH = "models/decision_tree_classifier.pkl"
 
 # ---------------------------------------------------
 # Features & Target
 # ---------------------------------------------------
-X = data.drop("charges", axis=1)
-y = data["charges"]
+X = data.drop(["charges", "insurance_category"], axis=1)
+
+y = data["insurance_category"]
 
 # ---------------------------------------------------
 # Train Model if PKL Doesn't Exist
@@ -71,7 +86,8 @@ if not os.path.exists(MODEL_PATH):
         X,
         y,
         test_size=0.2,
-        random_state=42
+        random_state=42,
+        stratify=y
     )
 
     params = {
@@ -79,16 +95,16 @@ if not os.path.exists(MODEL_PATH):
         "min_samples_split": [2, 5, 10],
         "min_samples_leaf": [1, 2, 4],
         "criterion": [
-            "squared_error",
-            "friedman_mse"
+            "gini",
+            "entropy"
         ]
     }
 
     grid = GridSearchCV(
-        DecisionTreeRegressor(random_state=42),
+        DecisionTreeClassifier(random_state=42),
         params,
         cv=5,
-        scoring="r2"
+        scoring="accuracy"
     )
 
     grid.fit(X_train, y_train)
@@ -125,7 +141,7 @@ show_heatmap = st.sidebar.checkbox(
 )
 
 show_distribution = st.sidebar.checkbox(
-    "Show Insurance Charges Distribution",
+    "Show Insurance Category Distribution",
     value=True
 )
 
@@ -152,13 +168,13 @@ if show_heatmap:
 # ---------------------------------------------------
 if show_distribution:
 
-    st.subheader("📈 Insurance Charges Distribution")
+    st.subheader("📈 Insurance Category Distribution")
 
     fig = px.histogram(
         data,
-        x="charges",
-        nbins=30,
-        title="Insurance Charges Distribution"
+        x="insurance_category",
+        color="insurance_category",
+        title="Insurance Category Distribution"
     )
 
     st.plotly_chart(
@@ -171,10 +187,10 @@ if show_distribution:
 # ---------------------------------------------------
 predictions = model.predict(X)
 
-mae = mean_absolute_error(y, predictions)
-mse = mean_squared_error(y, predictions)
-rmse = np.sqrt(mse)
-r2 = r2_score(y, predictions)
+accuracy = accuracy_score(y, predictions)
+precision = precision_score(y, predictions)
+recall = recall_score(y, predictions)
+f1 = f1_score(y, predictions)
 
 # ---------------------------------------------------
 # Metrics
@@ -183,32 +199,32 @@ st.subheader("📌 Model Performance")
 
 m1, m2, m3, m4 = st.columns(4)
 
-m1.metric("MAE", f"{mae:.2f}")
-m2.metric("MSE", f"{mse:.2f}")
-m3.metric("RMSE", f"{rmse:.2f}")
-m4.metric("R² Score", f"{r2:.4f}")
+m1.metric("Accuracy", f"{accuracy:.4f}")
+m2.metric("Precision", f"{precision:.4f}")
+m3.metric("Recall", f"{recall:.4f}")
+m4.metric("F1 Score", f"{f1:.4f}")
 
 # ---------------------------------------------------
-# Actual vs Predicted
+# Confusion Matrix
 # ---------------------------------------------------
-st.subheader("📉 Actual vs Predicted Charges")
+st.subheader("📉 Confusion Matrix")
 
-comparison = pd.DataFrame({
-    "Actual": y,
-    "Predicted": predictions
-})
+cm = confusion_matrix(y, predictions)
 
-fig = px.scatter(
-    comparison,
-    x="Actual",
-    y="Predicted",
-    title="Actual vs Predicted Charges"
+fig, ax = plt.subplots(figsize=(6,5))
+
+sns.heatmap(
+    cm,
+    annot=True,
+    fmt="d",
+    cmap="Blues",
+    ax=ax
 )
 
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
+ax.set_xlabel("Predicted")
+ax.set_ylabel("Actual")
+
+st.pyplot(fig)
 
 # ---------------------------------------------------
 # Feature Importance
@@ -239,12 +255,31 @@ st.plotly_chart(
 )
 
 # ---------------------------------------------------
+# Classification Report
+# ---------------------------------------------------
+st.subheader("📄 Classification Report")
+
+report = classification_report(
+    y,
+    predictions,
+    output_dict=True
+)
+
+report_df = pd.DataFrame(report).transpose()
+
+st.dataframe(report_df)
+
+# ---------------------------------------------------
 # Model Information
 # ---------------------------------------------------
 st.subheader("🧠 Model Information")
 
 st.success("""
-Algorithm Used: Decision Tree Regressor
+Algorithm Used: Decision Tree Classifier
+
+Target:
+- 0 = Low Insurance Charges
+- 1 = High Insurance Charges
 
 Hyperparameter Tuning:
 - GridSearchCV
@@ -256,7 +291,7 @@ Hyperparameter Tuning:
 # ---------------------------------------------------
 # User Input Section
 # ---------------------------------------------------
-st.subheader("🩺 Insurance Cost Prediction")
+st.subheader("🩺 Insurance Category Prediction")
 
 col1, col2, col3 = st.columns(3)
 
@@ -285,20 +320,29 @@ input_data = pd.DataFrame([{
 # ---------------------------------------------------
 # Match Columns
 # ---------------------------------------------------
-input_data = input_data.reindex(columns=X.columns, fill_value=0)
+input_data = input_data.reindex(
+    columns=X.columns,
+    fill_value=0
+)
 
 # ---------------------------------------------------
 # Prediction
 # ---------------------------------------------------
-if st.button("Predict Insurance Cost"):
+if st.button("Predict Insurance Category"):
 
     prediction = model.predict(input_data)[0]
 
-    st.subheader("💰 Estimated Insurance Charges")
+    probability = model.predict_proba(input_data)[0]
 
-    st.success(
-        f"Predicted Insurance Cost: ₹ {prediction:,.2f}"
-    )
+    st.subheader("🎯 Prediction Result")
+
+    if prediction == 1:
+        st.success("High Insurance Charges Category")
+    else:
+        st.info("Low Insurance Charges Category")
+
+    st.write(f"Probability of Low Charges: {probability[0]:.2f}")
+    st.write(f"Probability of High Charges: {probability[1]:.2f}")
 
 # ---------------------------------------------------
 # Footer
