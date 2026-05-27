@@ -2,251 +2,326 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
 import joblib
 import os
 
-from sklearn.datasets import load_breast_cancer
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    confusion_matrix,
-    classification_report
+from sklearn.model_selection import (
+    train_test_split,
+    GridSearchCV
 )
 
-# ================= Page Config =================
+from sklearn.tree import DecisionTreeClassifier
 
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix
+)
+
+# ---------------------------------------------------
+# Page Config
+# ---------------------------------------------------
 st.set_page_config(
-    page_title="KNN Classification Dashboard",
-    page_icon="🧠",
+    page_title="Heart Disease Classifier",
+    page_icon="❤️",
     layout="wide"
 )
 
-st.title("🧠 Breast Cancer Prediction using KNN Classification")
+st.title("❤️ Heart Disease Prediction Dashboard")
+st.markdown("Interactive Decision Tree Classification System")
 
-# ================= Create Folders =================
+# ---------------------------------------------------
+# Load Dataset
+# ---------------------------------------------------
+@st.cache_data
+def load_data():
+    return pd.read_csv("data/heart.csv")
 
-os.makedirs("data", exist_ok=True)
+data = load_data()
+
+# ---------------------------------------------------
+# Create Models Folder
+# ---------------------------------------------------
 os.makedirs("models", exist_ok=True)
 
-# ================= Load/Create Dataset =================
+MODEL_PATH = "models/decision_tree_model.pkl"
 
-csv_path = "data/breast_cancer.csv"
+# ---------------------------------------------------
+# Train Model if PKL Doesn't Exist
+# ---------------------------------------------------
+if not os.path.exists(MODEL_PATH):
 
-if not os.path.exists(csv_path):
+    X = data.drop("target", axis=1)
+    y = data["target"]
 
-    cancer = load_breast_cancer()
-
-    df = pd.DataFrame(
-        cancer.data,
-        columns=cancer.feature_names
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42
     )
 
-    df["target"] = cancer.target
+    params = {
+        "max_depth": [3, 5, 7, 10],
+        "min_samples_split": [2, 5, 10],
+        "min_samples_leaf": [1, 2, 4],
+        "criterion": ["gini", "entropy"]
+    }
 
-    df.to_csv(csv_path, index=False)
+    grid = GridSearchCV(
+        DecisionTreeClassifier(random_state=42),
+        params,
+        cv=5,
+        scoring="accuracy"
+    )
+
+    grid.fit(X_train, y_train)
+
+    model = grid.best_estimator_
+
+    joblib.dump(model, MODEL_PATH)
 
 else:
+    model = joblib.load(MODEL_PATH)
 
-    df = pd.read_csv(csv_path)
+# ---------------------------------------------------
+# Dataset Overview
+# ---------------------------------------------------
+st.subheader("📂 Dataset Overview")
 
-# ================= Dataset Info =================
-
-st.header("📂 Dataset Preview")
-
-st.dataframe(df.head())
-
-st.header("📋 Dataset Shape")
-
-st.write(df.shape)
-
-st.header("📊 Class Distribution")
-
-st.bar_chart(df["target"].value_counts())
-
-# ================= Features & Target =================
-
-X = df.drop("target", axis=1)
-y = df["target"]
-
-# ================= Train-Test Split =================
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42,
-    stratify=y
-)
-
-# ================= Scaling =================
-
-scaler = StandardScaler()
-
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# ================= Sidebar =================
-
-st.sidebar.header("⚙️ KNN Hyperparameters")
-
-k = st.sidebar.slider(
-    "Number of Neighbors (K)",
-    1,
-    20,
-    5
-)
-
-weights = st.sidebar.selectbox(
-    "Weights",
-    ["uniform", "distance"]
-)
-
-metric = st.sidebar.selectbox(
-    "Distance Metric",
-    ["minkowski", "euclidean", "manhattan"]
-)
-
-# ================= Train Model =================
-
-model = KNeighborsClassifier(
-    n_neighbors=k,
-    weights=weights,
-    metric=metric
-)
-
-model.fit(X_train_scaled, y_train)
-
-# ================= Save Model =================
-
-joblib.dump(model, "models/knn_classifier.pkl")
-joblib.dump(scaler, "models/scaler.pkl")
-
-# ================= Predictions =================
-
-y_pred = model.predict(X_test_scaled)
-
-# ================= Metrics =================
-
-accuracy = accuracy_score(y_test, y_pred)
-
-st.header("📊 Model Performance")
-
-col1, col2 = st.columns(2)
+col1, col2 = st.columns([2,1])
 
 with col1:
-    st.metric("Accuracy", f"{accuracy:.4f}")
+    st.dataframe(data.head())
 
 with col2:
-    st.metric(
-        "Correct Predictions",
-        f"{(y_test == y_pred).sum()}"
+    st.info(f"Rows: {data.shape[0]}")
+    st.info(f"Columns: {data.shape[1]}")
+
+# ---------------------------------------------------
+# Sidebar
+# ---------------------------------------------------
+st.sidebar.header("⚙️ Dashboard Controls")
+
+show_heatmap = st.sidebar.checkbox(
+    "Show Correlation Heatmap",
+    value=True
+)
+
+show_distribution = st.sidebar.checkbox(
+    "Show Target Distribution",
+    value=True
+)
+
+# ---------------------------------------------------
+# Correlation Heatmap
+# ---------------------------------------------------
+if show_heatmap:
+
+    st.subheader("📊 Correlation Heatmap")
+
+    fig, ax = plt.subplots(figsize=(12,8))
+
+    sns.heatmap(
+        data.corr(),
+        annot=True,
+        cmap="coolwarm",
+        ax=ax
     )
 
-# ================= Confusion Matrix =================
+    st.pyplot(fig)
 
-st.header("📈 Confusion Matrix")
+# ---------------------------------------------------
+# Target Distribution
+# ---------------------------------------------------
+if show_distribution:
 
-cm = confusion_matrix(y_test, y_pred)
+    st.subheader("📈 Heart Disease Distribution")
 
-fig, ax = plt.subplots(figsize=(6, 5))
+    fig = px.histogram(
+        data,
+        x="target",
+        color="target",
+        title="Target Distribution"
+    )
 
-heatmap = ax.imshow(cm, cmap="Blues")
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
 
-for i in range(cm.shape[0]):
-    for j in range(cm.shape[1]):
-        ax.text(
-            j,
-            i,
-            cm[i, j],
-            ha="center",
-            va="center",
-            color="black"
-        )
+# ---------------------------------------------------
+# Features & Target
+# ---------------------------------------------------
+X = data.drop("target", axis=1)
+y = data["target"]
+
+# ---------------------------------------------------
+# Predictions
+# ---------------------------------------------------
+predictions = model.predict(X)
+
+acc = accuracy_score(y, predictions)
+prec = precision_score(y, predictions)
+rec = recall_score(y, predictions)
+f1 = f1_score(y, predictions)
+
+# ---------------------------------------------------
+# Metrics
+# ---------------------------------------------------
+st.subheader("📌 Model Performance")
+
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric("Accuracy", f"{acc:.4f}")
+m2.metric("Precision", f"{prec:.4f}")
+m3.metric("Recall", f"{rec:.4f}")
+m4.metric("F1 Score", f"{f1:.4f}")
+
+# ---------------------------------------------------
+# Confusion Matrix
+# ---------------------------------------------------
+st.subheader("📉 Confusion Matrix")
+
+cm = confusion_matrix(y, predictions)
+
+fig, ax = plt.subplots(figsize=(5,5))
+
+sns.heatmap(
+    cm,
+    annot=True,
+    fmt="d",
+    cmap="Blues",
+    ax=ax
+)
 
 ax.set_xlabel("Predicted")
 ax.set_ylabel("Actual")
-ax.set_title("Confusion Matrix")
-
-plt.colorbar(heatmap)
 
 st.pyplot(fig)
 
-# ================= Classification Report =================
+# ---------------------------------------------------
+# Feature Importance
+# ---------------------------------------------------
+st.subheader("⭐ Feature Importance")
 
-st.header("📋 Classification Report")
+importance = pd.DataFrame({
+    "Feature": X.columns,
+    "Importance": model.feature_importances_
+})
 
-report = classification_report(
-    y_test,
-    y_pred,
-    output_dict=True
+importance = importance.sort_values(
+    by="Importance",
+    ascending=False
 )
 
-report_df = pd.DataFrame(report).transpose()
-
-st.dataframe(report_df)
-
-# ================= Correlation Heatmap =================
-
-st.header("📊 Correlation Heatmap")
-
-fig2, ax2 = plt.subplots(figsize=(12, 8))
-
-corr = df.corr()
-
-heatmap2 = ax2.imshow(corr, cmap="coolwarm")
-
-ax2.set_xticks(range(len(corr.columns)))
-ax2.set_yticks(range(len(corr.columns)))
-
-ax2.set_xticklabels(
-    corr.columns,
-    rotation=90,
-    fontsize=7
+fig = px.bar(
+    importance,
+    x="Importance",
+    y="Feature",
+    orientation="h",
+    title="Feature Importance"
 )
 
-ax2.set_yticklabels(
-    corr.columns,
-    fontsize=7
+st.plotly_chart(
+    fig,
+    use_container_width=True
 )
 
-plt.colorbar(heatmap2)
+# ---------------------------------------------------
+# Best Parameters
+# ---------------------------------------------------
+st.subheader("🧠 Model Information")
 
-st.pyplot(fig2)
+st.success("""
+Algorithm Used: Decision Tree Classifier
 
-# ================= Custom Prediction =================
+Hyperparameter Tuning:
+- GridSearchCV
+- Cross Validation = 5
+- Criterion = Gini / Entropy
+- Optimized Tree Depth
+""")
 
-st.header("🔍 Predict Cancer Type")
+# ---------------------------------------------------
+# User Input
+# ---------------------------------------------------
+st.subheader("🩺 Patient Details Prediction")
 
-input_data = {}
+col1, col2, col3 = st.columns(3)
 
-for column in X.columns[:10]:
+with col1:
+    age = st.slider("Age", 20, 80, 45)
+    sex = st.selectbox("Sex", [0, 1])
+    cp = st.slider("Chest Pain Type", 0, 3, 1)
+    trestbps = st.slider("Resting BP", 80, 200, 120)
+    chol = st.slider("Cholesterol", 100, 600, 200)
 
-    input_data[column] = st.number_input(
-        f"Enter {column}",
-        value=float(X[column].mean())
-    )
+with col2:
+    fbs = st.selectbox("Fasting Blood Sugar", [0,1])
+    restecg = st.slider("Rest ECG", 0, 2, 1)
+    thalach = st.slider("Max Heart Rate", 60, 220, 150)
+    exang = st.selectbox("Exercise Angina", [0,1])
 
-remaining_features = X.columns[10:]
+with col3:
+    oldpeak = st.slider("Old Peak", 0.0, 6.0, 1.0)
+    slope = st.slider("Slope", 0, 2, 1)
+    ca = st.slider("CA", 0, 4, 0)
+    thal = st.slider("Thal", 0, 3, 2)
 
-for column in remaining_features:
+# ---------------------------------------------------
+# Prediction Data
+# ---------------------------------------------------
+input_data = pd.DataFrame([{
+    "age": age,
+    "sex": sex,
+    "cp": cp,
+    "trestbps": trestbps,
+    "chol": chol,
+    "fbs": fbs,
+    "restecg": restecg,
+    "thalach": thalach,
+    "exang": exang,
+    "oldpeak": oldpeak,
+    "slope": slope,
+    "ca": ca,
+    "thal": thal
+}])
 
-    input_data[column] = float(X[column].mean())
+# ---------------------------------------------------
+# Predict Button
+# ---------------------------------------------------
+if st.button("Predict Heart Disease"):
 
-if st.button("Predict Cancer"):
+    prediction = model.predict(input_data)[0]
 
-    input_df = pd.DataFrame([input_data])
+    probability = model.predict_proba(
+        input_data
+    )[0]
 
-    input_scaled = scaler.transform(input_df)
+    confidence = np.max(probability) * 100
 
-    prediction = model.predict(input_scaled)
+    st.subheader("🔍 Prediction Result")
 
-    if prediction[0] == 1:
-        st.success("Prediction: Benign Tumor")
+    if prediction == 1:
+        st.error(
+            f"⚠️ High Risk of Heart Disease\n\nConfidence: {confidence:.2f}%"
+        )
+
     else:
-        st.error("Prediction: Malignant Tumor")
+        st.success(
+            f"✅ Low Risk of Heart Disease\n\nConfidence: {confidence:.2f}%"
+        )
 
-# ================= Footer =================
+# ---------------------------------------------------
+# Footer
+# ---------------------------------------------------
+st.markdown("---")
 
-st.success("🎉 KNN Classification Dashboard Completed Successfully")
+st.markdown(
+    "Made with ❤️ using Streamlit and Scikit-Learn"
+)
