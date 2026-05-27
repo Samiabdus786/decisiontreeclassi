@@ -44,6 +44,14 @@ def load_data():
 data = load_data()
 
 # ---------------------------------------------------
+# Encode Categorical Columns
+# ---------------------------------------------------
+categorical_cols = data.select_dtypes(include=["object"]).columns
+
+for col in categorical_cols:
+    data[col] = pd.factorize(data[col])[0]
+
+# ---------------------------------------------------
 # Create Models Folder
 # ---------------------------------------------------
 os.makedirs("models", exist_ok=True)
@@ -51,12 +59,15 @@ os.makedirs("models", exist_ok=True)
 MODEL_PATH = "models/decision_tree_model.pkl"
 
 # ---------------------------------------------------
+# Features & Target
+# ---------------------------------------------------
+X = data.drop("HeartDisease", axis=1)
+y = data["HeartDisease"]
+
+# ---------------------------------------------------
 # Train Model if PKL Doesn't Exist
 # ---------------------------------------------------
 if not os.path.exists(MODEL_PATH):
-
-    X = data.drop("target", axis=1)
-    y = data["target"]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -144,8 +155,8 @@ if show_distribution:
 
     fig = px.histogram(
         data,
-        x="target",
-        color="target",
+        x="HeartDisease",
+        color="HeartDisease",
         title="Target Distribution"
     )
 
@@ -153,12 +164,6 @@ if show_distribution:
         fig,
         use_container_width=True
     )
-
-# ---------------------------------------------------
-# Features & Target
-# ---------------------------------------------------
-X = data.drop("target", axis=1)
-y = data["target"]
 
 # ---------------------------------------------------
 # Predictions
@@ -233,7 +238,7 @@ st.plotly_chart(
 )
 
 # ---------------------------------------------------
-# Best Parameters
+# Model Information
 # ---------------------------------------------------
 st.subheader("🧠 Model Information")
 
@@ -248,52 +253,53 @@ Hyperparameter Tuning:
 """)
 
 # ---------------------------------------------------
-# User Input
+# User Input Section
 # ---------------------------------------------------
 st.subheader("🩺 Patient Details Prediction")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    age = st.slider("Age", 20, 80, 45)
-    sex = st.selectbox("Sex", [0, 1])
-    cp = st.slider("Chest Pain Type", 0, 3, 1)
-    trestbps = st.slider("Resting BP", 80, 200, 120)
-    chol = st.slider("Cholesterol", 100, 600, 200)
+    Age = st.slider("Age", 20, 80, 45)
+    Sex = st.selectbox("Sex", [0, 1])
+    ChestPainType = st.slider("Chest Pain Type", 0, 3, 1)
+    RestingBP = st.slider("Resting BP", 80, 200, 120)
 
 with col2:
-    fbs = st.selectbox("Fasting Blood Sugar", [0,1])
-    restecg = st.slider("Rest ECG", 0, 2, 1)
-    thalach = st.slider("Max Heart Rate", 60, 220, 150)
-    exang = st.selectbox("Exercise Angina", [0,1])
+    Cholesterol = st.slider("Cholesterol", 0, 600, 200)
+    FastingBS = st.selectbox("Fasting Blood Sugar", [0,1])
+    RestingECG = st.slider("Resting ECG", 0, 2, 1)
+    MaxHR = st.slider("Max Heart Rate", 60, 220, 150)
 
 with col3:
-    oldpeak = st.slider("Old Peak", 0.0, 6.0, 1.0)
-    slope = st.slider("Slope", 0, 2, 1)
-    ca = st.slider("CA", 0, 4, 0)
-    thal = st.slider("Thal", 0, 3, 2)
+    ExerciseAngina = st.selectbox("Exercise Angina", [0,1])
+    Oldpeak = st.slider("Old Peak", 0.0, 6.0, 1.0)
+    ST_Slope = st.slider("ST Slope", 0, 2, 1)
 
 # ---------------------------------------------------
-# Prediction Data
+# Input Data
 # ---------------------------------------------------
 input_data = pd.DataFrame([{
-    "age": age,
-    "sex": sex,
-    "cp": cp,
-    "trestbps": trestbps,
-    "chol": chol,
-    "fbs": fbs,
-    "restecg": restecg,
-    "thalach": thalach,
-    "exang": exang,
-    "oldpeak": oldpeak,
-    "slope": slope,
-    "ca": ca,
-    "thal": thal
+    "Age": Age,
+    "Sex": Sex,
+    "ChestPainType": ChestPainType,
+    "RestingBP": RestingBP,
+    "Cholesterol": Cholesterol,
+    "FastingBS": FastingBS,
+    "RestingECG": RestingECG,
+    "MaxHR": MaxHR,
+    "ExerciseAngina": ExerciseAngina,
+    "Oldpeak": Oldpeak,
+    "ST_Slope": ST_Slope
 }])
 
 # ---------------------------------------------------
-# Predict Button
+# Match Columns
+# ---------------------------------------------------
+input_data = input_data.reindex(columns=X.columns, fill_value=0)
+
+# ---------------------------------------------------
+# Prediction
 # ---------------------------------------------------
 if st.button("Predict Heart Disease"):
 
